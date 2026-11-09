@@ -1,0 +1,2 @@
+/* Fold Magic: almost everything is done with CSS variables set on <body> (removed on unload). */
+.fold-magic-bad { border-color: var(--text-error) !important; }
