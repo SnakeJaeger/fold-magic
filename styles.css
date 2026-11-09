@@ -2,3 +2,6 @@
 .fold-magic-bad { border-color: var(--text-error) !important; }
 .fold-magic-fix.is-stuck { color: var(--text-accent); }
 .fold-magic-live { color: var(--text-accent); }
+.fold-magic-advanced > summary { cursor: pointer; padding: var(--size-4-2) 0; color: var(--text-muted); font-weight: var(--font-semibold); }
+.fold-magic-advanced[open] > summary { margin-bottom: var(--size-4-1); }
+.fold-magic-probe { position: fixed; top: 0; left: 0; height: 100vh; width: 0; visibility: hidden; pointer-events: none; }
