@@ -1,2 +1,4 @@
 /* Fold Magic: almost everything is done with CSS variables set on <body> (removed on unload). */
 .fold-magic-bad { border-color: var(--text-error) !important; }
+.fold-magic-fix.is-stuck { color: var(--text-accent); }
+.fold-magic-live { color: var(--text-accent); }

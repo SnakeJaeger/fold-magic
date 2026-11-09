@@ -10,9 +10,11 @@
  * Does nothing on desktop. Disabling/updating puts everything back to stock.
  */
 const { Plugin, Platform, Notice, PluginSettingTab, Setting, normalizePath, moment } = require("obsidian");
+const FIX_ICON = "wand-sparkles";
 
 const DEFAULTS = {
-  stuckAction: "notice",        // notice | reload | off
+  stuckAction: "notice",        // notice (= Fix layout button in the note header) | reload | off
+  fixButton: "stuck",           // stuck | always | never: when the header button is shown
   closeDrawersOnFold: true,
   statusBarAuto: "off",         // off | always | unfolded | folded
   foldedWidth: "", foldedMaxWidth: "",
@@ -94,13 +96,16 @@ module.exports = class FoldMagicPlugin extends Plugin {
 
     this.registerDomEvent(window, "resize", () => this.onResize());
     // The stuck view shows up when you close a sidebar after a fold, which isn't a resize.
-    this.registerEvent(this.app.workspace.on("layout-change", () => { if (Date.now() >= (this.ignoreUntil || 0)) this.scheduleCheck("layout"); }));
+    this.registerEvent(this.app.workspace.on("layout-change", () => {
+      this.updateFixButtons();                              // new tabs get the button too
+      if (Date.now() >= (this.ignoreUntil || 0)) this.scheduleCheck("layout");
+    }));
     this.registerDomEvent(document, "visibilitychange", () => {
       if (document.hidden) return;
       this.hub.apply();                                     // Android may have shown the bar meanwhile
       this.scheduleCheck("resume");
     });
-    this.app.workspace.onLayoutReady(() => { this.applyAll(); this.scheduleCheck("startup"); });
+    this.app.workspace.onLayoutReady(() => { this.applyAll(); this.updateFixButtons(); this.scheduleCheck("startup"); });
   }
 
   onunload() {
@@ -110,12 +115,16 @@ module.exports = class FoldMagicPlugin extends Plugin {
     for (const v of WIDTH_VARS) document.body.style.removeProperty(v);
     // Day Peek has its own (simpler) width setting that steps aside while we're on: let it take over again.
     window.setTimeout(() => { const dp = this.app.plugins.plugins["day-peek"]; if (dp && dp.applyWidth) dp.applyWidth(); }, 0);
-    if (this.notice) this.notice.hide();
+    this.stuckNow = false; this.active = false; this.updateFixButtonsOff();
+  }
+
+  updateFixButtonsOff() {
+    this.app.workspace.iterateAllLeaves((leaf) => { const v = leaf.view; if (v && v.foldMagicFixEl) { v.foldMagicFixEl.remove(); v.foldMagicFixEl = null; } });
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
-    if (this.active) this.applyAll();
+    if (this.active) { this.applyAll(); this.updateFixButtons(); }
   }
 
   // ---------- screen changes ----------
@@ -159,6 +168,9 @@ module.exports = class FoldMagicPlugin extends Plugin {
     let s = this.measure();
     const steps = [];
     if (s.modeMismatch) { this.fixMode(); steps.push("fixed phone/tablet mode"); await sleep(400); s = this.measure(); }
+    if (s.stuck && s.overlayOpen) {                           // stuck with a sidebar out: close it first
+      this.closeDrawers(); steps.push("closed sidebars"); await sleep(500); s = this.measure();
+    }
     if (s.stuck && !s.overlayOpen && this.unshove()) {
       steps.push("reset shoved main view"); await sleep(300); s = this.measure();
     }
@@ -168,7 +180,7 @@ module.exports = class FoldMagicPlugin extends Plugin {
       if (s.stuck) { await sleep(1500); s = this.measure(); }
       if (s.stuck) steps.push(await this.onStuck());
     }
-    if (!s.stuck && this.notice) { this.notice.hide(); this.notice = null; }   // fixed itself meanwhile
+    if (!s.stuck) this.setStuck(false);                      // fixed itself meanwhile
     // Log folds and anything we had to fix; skip the many routine "layout" re-checks.
     if (this.settings.logChanges && (folded || steps.length || why !== "layout")) {
       await this.log(why + (folded ? ` (${this.changeFrom} → ${s.unfolded ? "unfolded" : "folded"})` : ""), s, steps.join(" + ") || "ok");
@@ -192,13 +204,20 @@ module.exports = class FoldMagicPlugin extends Plugin {
     // While a sliding (overlay) sidebar is open, Obsidian shoves the main view aside on purpose,
     // so only judge when none is open. Then the main view must sit between the pinned sidebars
     // (if any) and fill the rest of the screen. The bug: it stays shoved aside / too narrow.
+    // 0.1.1 (from the Fold log): the main view may only sit in its place, or be moved by EXACTLY the
+    // width of an open sliding sidebar. The stuck runs had it moved by the folded sidebar's width
+    // (346 px) while the unfolded one (525 px) was open, which 0.1.0 never judged.
     const pinW = (side) => drawers.filter((d) => d.side === side && d.pinned && d.open).reduce((a, d) => a + d.w, 0);
-    const overlayOpen = drawers.some((d) => d.open && !d.pinned);
+    const overlays = drawers.filter((d) => d.open && !d.pinned);
+    const overlayOpen = overlays.length > 0;
     const filled = root ? root.w + pinW("L") + pinW("R") : w;
-    const stuck = !!ws && (ws.w < w * 0.9 || ws.l > 8 || ws.r < w - 8 ||
-      (!overlayOpen && !!root && (Math.abs(root.l - pinW("L")) > 8 || Math.abs(root.r - (w - pinW("R"))) > 8)));
+    const shift = root ? root.l - pinW("L") : 0;
+    const okShifts = [0].concat(overlays.map((d) => (d.side === "L" ? d.w : -d.w)));
+    const shiftOk = okShifts.some((x) => Math.abs(shift - x) <= 8);
+    const widthOk = !root || Math.abs(root.w - (w - pinW("L") - pinW("R"))) <= 8;
+    const stuck = !!ws && (ws.w < w * 0.9 || ws.l > 8 || ws.r < w - 8 || !shiftOk || !widthOk);
     return { w, h, unfolded, tablet: !!Platform.isTablet, bodyTablet, keyboard: !!Platform.mobileSoftKeyboardVisible,
-      ws, root, drawers, overlayOpen, filled, modeMismatch, stuck };
+      ws, root, drawers, overlayOpen, filled, shift, modeMismatch, stuck };
   }
 
   fixMode() {
@@ -236,29 +255,52 @@ module.exports = class FoldMagicPlugin extends Plugin {
   async onStuck() {
     const a = this.settings.stuckAction;
     if (a === "reload") { await this.reload(); return "reloaded"; }
-    if (a === "notice") { this.showFixNotice(); return "offered Fix layout"; }
+    if (a === "notice") { this.setStuck(true); return "showed Fix layout button"; }
     return "still stuck (fix is off)";
   }
 
-  showFixNotice() {
-    if (this.notice && this.notice.noticeEl && this.notice.noticeEl.isConnected) return;   // already showing
-    const frag = createFragment((f) => {
-      f.createSpan({ text: "Fold Magic: the layout didn't follow the fold. " });
-      const b = f.createEl("button", { text: "Fix layout", cls: "mod-cta" });
-      b.addEventListener("click", (e) => { e.stopPropagation(); this.reload(); });
+  // ---------- the Fix layout button (note header, left of the reading-view icon) ----------
+  setStuck(on) {
+    this.stuckNow = on;
+    this.updateFixButtons();
+    if (on) new Notice("Fold Magic: layout stuck. Tap the ✨ wand in the note header to fix it.", 5000);
+  }
+
+  wantFixButton() {
+    const m = this.settings.fixButton;
+    return m === "always" || (m !== "never" && this.stuckNow);
+  }
+
+  updateFixButtons() {
+    const want = this.active && this.wantFixButton();
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      const v = leaf.view;
+      if (!v || typeof v.addAction !== "function" || !v.actionsEl) return;
+      if (want && !(v.foldMagicFixEl && v.foldMagicFixEl.isConnected)) {
+        // addAction() puts the button first in the header's action row: left of the book icon
+        v.foldMagicFixEl = v.addAction(FIX_ICON, "Fix layout (Fold Magic)", () => this.fixNow());
+        v.foldMagicFixEl.addClass("fold-magic-fix");
+        // Notes: sit right in front of the reading-view (book) button, even if other buttons come first.
+        if (v.modeButtonEl && v.modeButtonEl.parentElement === v.actionsEl) v.actionsEl.insertBefore(v.foldMagicFixEl, v.modeButtonEl);
+      }
+      if (v.foldMagicFixEl) {
+        if (!want) { v.foldMagicFixEl.remove(); v.foldMagicFixEl = null; }
+        else v.foldMagicFixEl.toggleClass("is-stuck", !!this.stuckNow);
+      }
     });
-    this.notice = new Notice(frag, 0);                     // stays until tapped
   }
 
   async fixNow() {
     this.closeDrawers();
+    await sleep(400);
     this.unshove();
     this.fixMode();
     await sleep(500);
     const s = this.measure();
     if (s.stuck) { await this.reload(); return; }
-    new Notice("Fold Magic: layout looks right now", 2500);
-    if (this.settings.logChanges) await this.log("fix command", s, "fixed without reload");
+    this.setStuck(false);
+    new Notice("Fold Magic: layout fixed", 2000);
+    if (this.settings.logChanges) await this.log("fix button", s, "fixed without reload");
   }
 
   async reload() {
@@ -302,7 +344,7 @@ module.exports = class FoldMagicPlugin extends Plugin {
   describe(s) {
     const r = (x) => (x ? `${x.l}–${x.r}` : "none");
     const d = s.drawers.map((x) => `${x.side}:${x.open ? (x.pinned ? "pinned " : "open ") + x.w : "closed"}`).join(" ");
-    return `${s.w}×${s.h} ${s.unfolded ? "unfolded" : "folded"} · mode ${s.tablet ? "tablet" : "phone"} (body ${s.bodyTablet ? "tablet" : "phone"}) · keyboard ${s.keyboard ? "up" : "down"} · workspace ${r(s.ws)} · main ${r(s.root)} · drawers ${d || "none"}`;
+    return `${s.w}×${s.h} ${s.unfolded ? "unfolded" : "folded"} · mode ${s.tablet ? "tablet" : "phone"} (body ${s.bodyTablet ? "tablet" : "phone"}) · keyboard ${s.keyboard ? "up" : "down"} · workspace ${r(s.ws)} · main ${r(s.root)} (shift ${s.shift}) · drawers ${d || "none"}`;
   }
 
   async log(why, s, result) {
@@ -352,6 +394,7 @@ function validLength(x, varName) {
 
 class FoldMagicSettings extends PluginSettingTab {
   constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  hide() { if (this.liveOff) this.liveOff(); }
   display() {
     const el = this.containerEl, p = this.plugin, s = p.settings;
     el.empty();
@@ -362,6 +405,10 @@ class FoldMagicSettings extends PluginSettingTab {
       .setDesc("First Fold Magic fixes the phone/tablet mode and nudges the layout by itself. If that isn't enough, it can show a Fix layout button (reloads Obsidian after saving your notes) or reload straight away.")
       .addDropdown((d) => d.addOptions({ notice: "Show a Fix layout button", reload: "Reload automatically", off: "Do nothing" })
         .setValue(s.stuckAction).onChange(async (v) => { s.stuckAction = v; await p.saveSettings(); }));
+    new Setting(el).setName("Fix layout button in the note header")
+      .setDesc("A ✨ wand left of the reading-view (book) icon. Tap it: closes sidebars, resets the layout, and reloads only if that wasn't enough.")
+      .addDropdown((d) => d.addOptions({ stuck: "Only when the layout is stuck", always: "Always", never: "Never" })
+        .setValue(s.fixButton).onChange(async (v) => { s.fixButton = v; await p.saveSettings(); }));
     new Setting(el).setName("Close sidebars when you fold or unfold")
       .setDesc("Open sidebars during a fold are the usual trigger for the stuck layout.")
       .addToggle((t) => t.setValue(s.closeDrawersOnFold).onChange(async (v) => { s.closeDrawersOnFold = v; await p.saveSettings(); }));
@@ -374,7 +421,13 @@ class FoldMagicSettings extends PluginSettingTab {
 
     el.createEl("h3", { text: "Sidebar width" });
     el.createEl("p", { cls: "setting-item-description", text: "Any CSS length: 70vw (70% of the screen), 500px, … Leave empty for Obsidian's default. Switches automatically when you fold or unfold." });
-    const width = (key, name, stock, varName) => new Setting(el).setName(name).setDesc(`Obsidian's default: ${stock}`)
+    const live = [];
+    const width = (key, name, stock, varName) => new Setting(el).setName(name)
+      .setDesc(createFragment((f) => {
+        f.appendText(`Obsidian's default: ${stock}`);
+        f.createEl("br");
+        live.push(f.createSpan({ cls: "fold-magic-live" }));
+      }))
       .addText((t) => {
         t.setPlaceholder(stock).setValue(s[key]);
         t.inputEl.addEventListener("change", async () => {
@@ -389,6 +442,14 @@ class FoldMagicSettings extends PluginSettingTab {
     width("unfoldedWidth", "Unfolded: width", STOCK["--mobile-sidebar-width"], WIDTH_VARS[0]);
     width("unfoldedMaxWidth", "Unfolded: maximum width", STOCK["--mobile-sidebar-max-width"] + " (none = no limit)", WIDTH_VARS[1]);
     width("unfoldedPinnedWidth", "Unfolded: pinned sidebar width", STOCK["--mobile-sidebar-width-pinned"], WIDTH_VARS[2]);
+    const showLive = () => {
+      const txt = `Your screen right now: ${window.innerWidth} px wide, ${window.matchMedia(TABLET_MQ).matches ? "unfolded" : "folded"} (CSS pixels: the same units as this setting, not your phone's spec-sheet resolution).`;
+      for (const sp of live) sp.setText(txt);
+    };
+    showLive();
+    if (this.liveOff) this.liveOff();
+    window.addEventListener("resize", showLive);
+    this.liveOff = () => { window.removeEventListener("resize", showLive); this.liveOff = null; };
 
     el.createEl("h3", { text: "Troubleshooting" });
     new Setting(el).setName("Log screen changes")
