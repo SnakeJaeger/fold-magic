@@ -50,3 +50,7 @@ Heights in Obsidian are a little smaller than the full screen, because of the st
 Fold Magic reads and adjusts Obsidian's own layout. The phone/tablet rule `(min-width: 600px) and (min-height: 600px)` and the `--mobile-sidebar-*` CSS variables are Obsidian internals, so a big Obsidian update could change them.
 
 No build step: `main.js` is plain JavaScript.
+
+## License
+
+[MIT](LICENSE) © 2026 Tailnet 4
