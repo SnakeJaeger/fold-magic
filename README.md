@@ -17,11 +17,11 @@ Made by **Tailnet 4**.
 - **Note font size, folded and unfolded.** A foldable's inner screen usually has a lower pixel density than the cover screen, so the same font size looks bigger unfolded (about 15% on a Z Fold 7: roughly 370 vs 420 ppi). Set one size for each state; it switches by itself. Leave a size empty to use your Appearance size, and turning the plugin off puts that back. While a size is set here, it wins over pinch-to-zoom.
 - **Troubleshooting.** *Log screen changes* writes one line per fold to a note. The command *Save a layout snapshot* records the full layout, including the keyboard toolbar.
 
-Fold Magic does nothing on desktop. Turning it off or updating it puts the status bar and widths back to stock.
+Fold Magic does nothing on desktop. Turning it off or updating it puts the status bar, widths and font size back to stock.
 
 ## Common foldable screen widths
 
-Widths are in **CSS pixels**, the units the width settings use. They're smaller than the phone's spec-sheet resolution, and they change with the display size setting (Settings → Display → Screen zoom). The quickest way to know yours: open Fold Magic's settings, which show your current width live.
+Widths are in **CSS pixels**, the units the width settings use. They're smaller than the phone's spec-sheet resolution, and they change with the display size setting (Settings → Display → Screen zoom). The quickest way to know yours: tap into a width field in Fold Magic's settings; it shows your current width while you type.
 
 | Phone | Folded (cover) | Unfolded (inner) | Source |
 |---|---|---|---|
