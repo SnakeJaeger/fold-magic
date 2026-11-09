@@ -19,6 +19,7 @@ const DEFAULTS = {
   statusBarAuto: "off",         // off | always | unfolded | folded
   foldedWidth: "", foldedMaxWidth: "",
   unfoldedWidth: "", unfoldedMaxWidth: "", unfoldedPinnedWidth: "",
+  foldedFontSize: "", unfoldedFontSize: "",   // 0.2.0: note text size per fold state ("" = Obsidian's)
   logChanges: false,
   logPath: "Fold Magic log.md",
 };
@@ -95,6 +96,8 @@ module.exports = class FoldMagicPlugin extends Plugin {
     this.addCommand({ id: "snapshot", name: "Save a layout snapshot (for bug reports)", callback: () => this.snapshot() });
 
     this.registerDomEvent(window, "resize", () => this.onResize());
+    // Obsidian re-applies its own font size when you change it (Appearance, pinch-zoom): put ours back.
+    this.registerEvent(this.app.workspace.on("css-change", () => { if (this.fontSet) this.applyFont(); }));
     // The stuck view shows up when you close a sidebar after a fold, which isn't a resize.
     this.registerEvent(this.app.workspace.on("layout-change", () => {
       this.updateFixButtons();                              // new tabs get the button too
@@ -113,6 +116,7 @@ module.exports = class FoldMagicPlugin extends Plugin {
     if (!this.active) return;
     this.hub.leave("fold-magic");                           // shows the bar unless Day Peek still wants it hidden
     for (const v of WIDTH_VARS) document.body.style.removeProperty(v);
+    if (this.fontSet) this.restoreFont();                   // Obsidian's own font size back
     // Day Peek has its own (simpler) width setting that steps aside while we're on: let it take over again.
     window.setTimeout(() => { const dp = this.app.plugins.plugins["day-peek"]; if (dp && dp.applyWidth) dp.applyWidth(); }, 0);
     this.stuckNow = false; this.active = false; this.updateFixButtonsOff();
@@ -317,7 +321,31 @@ module.exports = class FoldMagicPlugin extends Plugin {
   }
 
   // ---------- status bar + widths ----------
-  applyAll() { this.applyWidths(); this.applyStatusBar(); }
+  applyAll() { this.applyWidths(); this.applyFont(); this.applyStatusBar(); }
+
+  // ---------- note font size (0.2.0) ----------
+  // Obsidian puts your Appearance size on <body> as --font-text-size (app.updateFontSize()).
+  // The inner screen has a lower pixel density, so the same size looks ~15% bigger unfolded.
+  fontFor(unfolded) {
+    const x = normalizeFontSize(unfolded ? this.settings.unfoldedFontSize : this.settings.foldedFontSize);
+    return x && validFontSize(x) ? x : "";
+  }
+
+  applyFont() {
+    const x = this.fontFor(this.mq.matches);
+    if (x) {
+      if (document.body.style.getPropertyValue("--font-text-size") !== x) document.body.style.setProperty("--font-text-size", x);
+      this.fontSet = true;
+    } else if (this.fontSet) {
+      this.restoreFont();
+    }
+  }
+
+  restoreFont() {
+    this.fontSet = false;
+    try { this.app.updateFontSize(); }                      // Obsidian re-applies its own size
+    catch (e) { document.body.style.removeProperty("--font-text-size"); }
+  }
 
   applyStatusBar() {
     const a = this.settings.statusBarAuto, u = this.mq.matches;
@@ -387,6 +415,15 @@ module.exports = class FoldMagicPlugin extends Plugin {
   }
 };
 
+function normalizeFontSize(x) {
+  x = (x || "").trim();
+  return /^\d+(\.\d+)?$/.test(x) ? x + "px" : x;       // "14" means 14px
+}
+
+function validFontSize(x) {
+  try { return CSS.supports("font-size", x); } catch (e) { return false; }
+}
+
 function validLength(x, varName) {
   const prop = varName && varName.includes("max-width") ? "max-width" : "width";
   try { return CSS.supports(prop, x); } catch (e) { return false; }
@@ -421,14 +458,22 @@ class FoldMagicSettings extends PluginSettingTab {
 
     el.createEl("h3", { text: "Sidebar width" });
     el.createEl("p", { cls: "setting-item-description", text: "Any CSS length: 70vw (70% of the screen), 500px, … Leave empty for Obsidian's default. Switches automatically when you fold or unfold." });
-    const live = [];
+    // "Your screen right now" only under the field you're typing in (0.2.0).
+    let liveSpan = null;
     const width = (key, name, stock, varName) => new Setting(el).setName(name)
       .setDesc(createFragment((f) => {
         f.appendText(`Obsidian's default: ${stock}`);
-        f.createEl("br");
-        live.push(f.createSpan({ cls: "fold-magic-live" }));
+        f.createDiv({ cls: "fold-magic-live" }).hide();
       }))
       .addText((t) => {
+        t.inputEl.addEventListener("focus", () => {
+          const live = t.inputEl.closest(".setting-item").querySelector(".fold-magic-live");
+          liveSpan = live; showLive(); live.show();
+        });
+        t.inputEl.addEventListener("blur", () => {
+          const live = t.inputEl.closest(".setting-item").querySelector(".fold-magic-live");
+          live.hide(); if (liveSpan === live) liveSpan = null;
+        });
         t.setPlaceholder(stock).setValue(s[key]);
         t.inputEl.addEventListener("change", async () => {
           const v = t.getValue().trim();
@@ -442,14 +487,29 @@ class FoldMagicSettings extends PluginSettingTab {
     width("unfoldedWidth", "Unfolded: width", STOCK["--mobile-sidebar-width"], WIDTH_VARS[0]);
     width("unfoldedMaxWidth", "Unfolded: maximum width", STOCK["--mobile-sidebar-max-width"] + " (none = no limit)", WIDTH_VARS[1]);
     width("unfoldedPinnedWidth", "Unfolded: pinned sidebar width", STOCK["--mobile-sidebar-width-pinned"], WIDTH_VARS[2]);
-    const showLive = () => {
-      const txt = `Your screen right now: ${window.innerWidth} px wide, ${window.matchMedia(TABLET_MQ).matches ? "unfolded" : "folded"} (CSS pixels: the same units as this setting, not your phone's spec-sheet resolution).`;
-      for (const sp of live) sp.setText(txt);
-    };
-    showLive();
+    function showLive() {
+      if (!liveSpan) return;
+      liveSpan.setText(`Your screen right now: ${window.innerWidth} px wide, ${window.matchMedia(TABLET_MQ).matches ? "unfolded" : "folded"} (CSS pixels: the same units as this setting, not your phone's spec-sheet resolution).`);
+    }
     if (this.liveOff) this.liveOff();
     window.addEventListener("resize", showLive);
     this.liveOff = () => { window.removeEventListener("resize", showLive); this.liveOff = null; };
+
+    el.createEl("h3", { text: "Note font size" });
+    el.createEl("p", { cls: "setting-item-description", text: "The inner screen has a lower pixel density than the cover screen, so the same size looks about 15% bigger unfolded. Set each one here (16 or 16px; empty = your Appearance size). Switches when you fold or unfold. While a size is set here, it wins over pinch-to-zoom." });
+    const font = (key, name) => new Setting(el).setName(name)
+      .setDesc(`Your Appearance size: ${(() => { try { return this.app.vault.getConfig("baseFontSize") || 16; } catch (e) { return 16; } })()}px`)
+      .addText((t) => {
+        t.setPlaceholder("e.g. 14").setValue(s[key]);
+        t.inputEl.addEventListener("change", async () => {
+          const v = normalizeFontSize(t.getValue());
+          if (v && !validFontSize(v)) { new Notice(`Fold Magic: “${t.getValue()}” isn't a font size (try 14 or 15px)`, 4000); t.inputEl.addClass("fold-magic-bad"); return; }
+          t.inputEl.removeClass("fold-magic-bad");
+          s[key] = t.getValue().trim(); await p.saveSettings();
+        });
+      });
+    font("foldedFontSize", "Folded: font size");
+    font("unfoldedFontSize", "Unfolded: font size");
 
     el.createEl("h3", { text: "Troubleshooting" });
     new Setting(el).setName("Log screen changes")

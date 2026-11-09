@@ -13,7 +13,8 @@ Made by **Tailnet 4**.
 
   If none of that helps, a ✨ **Fix layout** button appears in the note header, left of the reading-view icon. It saves your notes and reloads. You can also have it reload automatically, or keep the button there all the time.
 - **Android status bar.** The command *Toggle Android status bar* works any time; bind it to the pull-down gesture in Settings → Mobile → Quick action. There's also an optional auto-hide: always, only unfolded, or only folded. It works together with [Day Peek](https://github.com/SnakeJaeger/day-peek): both use one shared controller for the bar, so they never fight over it.
-- **Sidebar width, folded and unfolded.** Obsidian limits the slide-out sidebar to 84% of the screen and at most 450 px, so unfolded it only fills about half the screen. Set your own width, maximum and pinned width for each state; they switch by themselves when you fold. Settings show your current screen width live.
+- **Sidebar width, folded and unfolded.** Obsidian limits the slide-out sidebar to 84% of the screen and at most 450 px, so unfolded it only fills about half the screen. Set your own width, maximum and pinned width for each state; they switch by themselves when you fold. While you type in a width field, it shows your current screen width.
+- **Note font size, folded and unfolded.** A foldable's inner screen usually has a lower pixel density than the cover screen, so the same font size looks bigger unfolded (about 15% on a Z Fold 7: roughly 370 vs 420 ppi). Set one size for each state; it switches by itself. Leave a size empty to use your Appearance size, and turning the plugin off puts that back. While a size is set here, it wins over pinch-to-zoom.
 - **Troubleshooting.** *Log screen changes* writes one line per fold to a note. The command *Save a layout snapshot* records the full layout, including the keyboard toolbar.
 
 Fold Magic does nothing on desktop. Turning it off or updating it puts the status bar and widths back to stock.
@@ -41,6 +42,7 @@ Heights in Obsidian are a little smaller than the full screen, because of the st
 | Close sidebars when you fold or unfold | On / off |
 | Android status bar: hide automatically | Never · Always · When unfolded · When folded |
 | Sidebar width (folded / unfolded) | width, maximum width, pinned width (unfolded); any CSS length |
+| Note font size (folded / unfolded) | e.g. `16` and `14` (px); empty = your Appearance size |
 | Log screen changes / Log note | On / off, path of the note |
 
 ## Good to know
