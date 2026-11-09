@@ -26,8 +26,6 @@ Widths are in **CSS pixels**, the units the width settings use. They're smaller 
 | Phone | Folded (cover) | Unfolded (inner) | Source |
 |---|---|---|---|
 | Samsung Galaxy Z Fold 7 | 411 × 960 | 749 × 832 | measured in Obsidian with Fold Magic (default zoom) |
-| Samsung Galaxy Z Fold 6 | ≈ 402 × 956 | ≈ 904 × 968 | reported by [tinyfont](https://tinyfont-me.pages.dev/screenresolutions/device/samsung-galaxy-z-fold-6-open), [cover](https://tinyfont-me.pages.dev/screenresolutions/device/samsung-galaxy-z-fold-6-cover) |
-| Google Pixel 9 Pro Fold | — | ≈ 755 × 783 | estimated by [What Is My Screen Size?](https://www.whatismyscreensize.com/device/pixel-9-pro-fold) |
 
 Heights in Obsidian are a little smaller than the full screen, because of the status and navigation bars. Got another foldable? Run *Save a layout snapshot* and send us the numbers.
 
