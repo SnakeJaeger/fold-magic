@@ -11,6 +11,12 @@ Made by **Tailnet 4**.
 - **Fixes the stuck layout bug.** Obsidian can get stuck squashed into part of the screen after you fold or unfold. Fold Magic fixes it automatically or with one tap.
 - **Hide the Android status bar.** Automatically or with a gesture, for a cleaner full screen.
 
+## Screenshot
+
+Unfolded Galaxy Z Fold 7 with the sidebar widened by Fold Magic (here showing [Day Peek](https://github.com/SnakeJaeger/day-peek)):
+
+![Wide sidebar on the unfolded screen](https://raw.githubusercontent.com/SnakeJaeger/fold-magic/main/screenshots/1-wide-sidebar-unfolded.jpg)
+
 ## In detail
 
 - **Un-sticks the layout after folding.** Obsidian sometimes keeps the old layout when you fold or unfold, for example with a sidebar open: the main view stays shoved to one side, with black next to it. Fold Magic checks the layout after every fold, sidebar change and app resume, and fixes it:
